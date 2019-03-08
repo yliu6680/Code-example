@@ -1,0 +1,137 @@
+---
+title: "Boston Crime Data"
+output: html_notebook
+---
+
+This dataset is from [Kaggle](https://www.kaggle.com/ankkur13/boston-crime-data) 
+
+Prepare for analysis
+```{r}
+setwd("~/../Desktop/Spring2019/MA681_RENEW_PROJECT/SCRIPT/")
+library(tidyverse)
+library(corrplot)
+tidied_data <- readRDS("crime_data.rds")
+distric_name <- c("DOWNTOWN AND CHARLESTOWN-1","DOWNTOWN AND CHARLESTOWN-2",
+                  "EAST BOSTON","ROXBURY","MATTAPAN","DORCHESTER",
+                  "SOUTH BOSTON","BRIGHTON","SOUTH END","JAMAICA PLAIN",
+                  "HYDE PARK","WEST ROXBURY","no report")
+distric_code <- sort(unique(as.character(tidied_data$DISTRICT)))
+tidied_data$district_name <- apply(tidied_data, 1, FUN = function(x){
+  id <- which(x[2] == distric_code)
+  return(distric_name[id])
+})
+
+```
+
+Total number of crimes
+```{r}
+tidied_data %>% group_by(crime_date) %>%
+  summarize(Occurrenes = n()) %>%
+  ggplot(aes(x = as.Date(crime_date),y = Occurrenes, group = 1)) + 
+    geom_line()+
+    scale_x_date(breaks=as.Date(c("2015-06-15","2016-04-12","2017-02-09","2017-12-06","2018-10-03")))+
+    xlab("Crime date")
+```
+
+Number of crimes in different districs in different months
+```{r}
+tidied_data %>% group_by(YEAR, FIXED_MONTH, district_name) %>%
+  filter(!((FIXED_MONTH == "06" & YEAR == 2015) | 
+           (FIXED_MONTH == "10" & YEAR == 2018))) %>%
+  summarize(Occurrenes = n()) %>%
+  ggplot(aes(x = as.factor(paste(YEAR,FIXED_MONTH,sep = "-")),y = Occurrenes, group = district_name,color = district_name)) + 
+  geom_line()+
+  theme(axis.text.x = element_text(angle = 90),
+        legend.text =  element_text(size = 6))+
+  xlab("Year-Month")
+```
+
+Number of crimes in different districs in different week days.
+```{r}
+tidied_data %>% 
+  filter(YEAR %in% c(2016,2017)) %>%
+  group_by(FIXED_MONTH, DAY_OF_WEEK, district_name) %>%
+  summarize(Occurrenes = n()) %>%
+  ggplot(aes(x = as.factor(paste(FIXED_MONTH,DAY_OF_WEEK,sep = "-")),y = Occurrenes, group = district_name,color = district_name)) + 
+  geom_line()+
+  theme(axis.text.x = element_text(angle = 90, size = 5.5),
+        legend.text =  element_text(size = 5.5))+
+  xlab("Month-Day")
+```
+
+Boxplot for Occurences in each month
+```{r}
+x <- tidied_data %>% 
+  filter(YEAR %in% c(2016,2017)) %>%
+  group_by(MONTH, crime_date) %>%
+  summarize(Occurrences = n())
+
+day_mean <- mean(x$Occurrences)
+
+x %>%
+  ggplot(aes(x = MONTH,y = Occurrences)) + 
+    geom_boxplot(aes(fill = MONTH))+
+    geom_hline(yintercept = day_mean, linetype = 2, colour = "black", size = 1.5)+ # mean of day crime occurrences
+    theme(axis.text.x = element_text(angle = 90))+
+    xlab("Month")
+```
+
+Top crimes type in Huntington Avenue.
+```{r}
+tidied_data %>%
+  group_by(STREET,OFFENSE_CODE_GROUP) %>%
+  summarize(Occurrens = n()) %>%
+  filter((STREET == "HUNTINGTON AVE") &
+           (Occurrens >= sort(Occurrens,decreasing = T)[10])) %>%
+  ggplot(aes(OFFENSE_CODE_GROUP, Occurrens, fill = OFFENSE_CODE_GROUP))+
+    geom_bar(stat = "identity")+
+    theme(axis.text.x = element_blank()) +
+    xlab("Crime types")
+```
+
+Comparison between crime types in streets.
+```{r}
+tidied_data %>%
+  mutate(Crime_types = ifelse(OFFENSE_CODE_GROUP %in% c("Larceny","Larceny From Motor Vehicle","Simple Assault","Aggravated Assault"),OFFENSE_CODE_GROUP, "Others")) %>%
+  group_by(STREET,Crime_types) %>%
+  summarize(Occurrens = n()) %>%
+  filter((STREET %in% c("HUNTINGTON AVE","BOYLSTON ST","COLUMBUS AVE","MASSACHUSETTS AVE","NEWBURY ST")) &
+           (Crime_types != "Others")) %>%
+  ggplot(aes(STREET, Occurrens, fill = Crime_types))+
+  geom_bar(stat = "identity")+
+  coord_flip()+
+  theme(legend.position = "right")+
+  xlab("Crime types")
+```
+
+Correlation between different types of crimes
+```{r}
+tidied_data %>%
+  group_by(crime_date,OFFENSE_CODE_GROUP) %>%
+  summarize(Counts = n()) %>%
+  spread(OFFENSE_CODE_GROUP,Counts) %>%
+  remove_rownames() %>%
+  column_to_rownames("crime_date") %>%
+  apply(2,FUN = function(x){
+    x[is.na(x)] <-  0
+    return(x)
+  }) %>%
+  cor() %>%
+  corrplot(type = "upper", method = "ellipse", tl.col = "black", tl.srt = 45, number.cex = .75,tl.cex = .40,outline = FALSE)
+
+```
+
+Locations for crime using the longitude and latitude.
+```{r}
+temp <- tidied_data %>%
+  na.omit() %>%
+  filter(Lat != -1 & Long != -1)
+
+temp %>%  
+  ggplot(aes(x = Long, y = Lat, color = district_name)) +
+    geom_point(alpha = .1) + 
+    guides(colour = guide_legend(override.aes = list(alpha = 1))) +
+    theme(panel.background = element_rect(fill = "white"),
+                                  panel.grid = element_line(color = "black"))
+
+```
